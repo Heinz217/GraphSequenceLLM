@@ -26,7 +26,7 @@ from transformers.generation.utils import GenerateOutput
 
 from utils.constants import IGNORE_INDEX
 
-from model.gls_arch import GslMetaModel, GslMetaForCausalLM
+from model.gsl_arch import GslMetaModel, GslMetaForCausalLM
 
 
 class GSLConfig(LlamaConfig):
