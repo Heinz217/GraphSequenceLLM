@@ -34,6 +34,7 @@ from model import *
 
 import random
 from tqdm import trange
+from model.language_model.gsl_llama import GslLlamaForCausalLM
 from utils import conversation as conversation_lib
 from utils.utils import tokenizer_graph_token
 import scipy.sparse as sp
@@ -845,6 +846,7 @@ class LazySupervisedGraphDataset(Dataset):
 
     def load_pretrain_embedding_hop(self, data_dir, pretrained_embedding_type, hop):
         # TODO:注意看一下各种embedding的格式
+        # TODO:注意看一下到底是怎样进行输入的，和维度hidden到底有什么关系？
         if pretrained_embedding_type == "simteg":
             simteg_sbert=[torch.load(os.path.join(data_dir, f"simteg_sbert_x.pt"))] + [torch.load(os.path.join(data_dir, f"simteg_sbert_{i}hop_x.pt")) for i in range(1, hop + 1)]
             simteg_roberta = [torch.load(os.path.join(data_dir, f"simteg_roberta_x.pt"))] + [torch.load(os.path.join(data_dir, f"simteg_roberta_{i}hop_x.pt")) for i in range(1, hop + 1)]
@@ -1011,5 +1013,220 @@ def _train():
         model_args.mm_hidden_size += data_args.structure_embedding_dim  # 得到最终的hidden size，即：[center_node_size + num_neighbours * neighbour_node_size]
     print(f"mm_hidden_size: {model_args.mm_hidden_size}")
 
+    bnb_model_from_pretrained_args = {}
+    if training_args.bits in [4, 8]:
+        from transformers import BitsAndBytesConfig
+        bnb_model_from_pretrained_args.update(dict(
+            device_map={"": training_args.device},
+            load_in_4bit=training_args.bits == 4,
+            load_in_8bit=training_args.bits == 8,
+            quantization_config=BitsAndBytesConfig(
+                load_in_4bit=training_args.bits == 4,
+                load_in_8bit=training_args.bits == 8,
+                llm_int8_threshold=6.0,
+                llm_int8_has_fp16_weight=False,
+                bnb_4bit_compute_dtype=compute_dtype,
+                bnb_4bit_use_double_quant=training_args.double_quant,
+                bnb_4bit_quant_type=training_args.quant_type  # {'fp4', 'nf4'}
+            )
+        ))
+
+    # TODO:检查一下到底是调用了哪种模型
+    if 'mpt' in model_args.model_name_or_path:
+        config = transformers.AutoConfig.from_pretrained(model_args.model_name_or_path, trust_remote_code=True)
+        config.attn_config['attn_impl'] = training_args.mpt_attn_impl
+        model = LlagaMPTForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            config=config,
+            cache_dir=training_args.cache_dir,
+            **bnb_model_from_pretrained_args
+        )
+    elif 'opt' in model_args.model_name_or_path:
+        model = LlagaOPTForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+            **bnb_model_from_pretrained_args
+        )
+    else:
+        model = GslLlamaForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+            **bnb_model_from_pretrained_args
+        )
+
+    # 应该是没用上
+    if training_args.bits in [4, 8]:
+        from peft import prepare_model_for_kbit_training
+        model.config.torch_dtype = (
+            torch.float32 if training_args.fp16 else (torch.bfloat16 if training_args.bf16 else torch.float32))
+        model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=training_args.gradient_checkpointing)
+
+    # --gradient_checkpointing True
+    # TODO:结合model看一下具体例子
+    if training_args.gradient_checkpointing:
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
+        else:
+            def make_inputs_require_grad(module, input, output):
+                output.requires_grad_(True)
+
+            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+
+    # 这个位置似乎也没用到
+    if training_args.lora_enable:
+        from peft import LoraConfig, get_peft_model
+        lora_config = LoraConfig(
+            r=training_args.lora_r,
+            lora_alpha=training_args.lora_alpha,
+            target_modules=find_all_linear_names(model),
+            lora_dropout=training_args.lora_dropout,
+            bias=training_args.lora_bias,
+            task_type="CAUSAL_LM",
+        )
+        if training_args.bits == 16:
+            if training_args.bf16:
+                model.to(torch.bfloat16)
+            if training_args.fp16:
+                model.to(torch.float16)
+        rank0_print("Adding LoRA adapters...")
+        model = get_peft_model(model, lora_config)
+
+    # 取用tokenizer
+    if 'mpt' in model_args.model_name_or_path:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+            model_max_length=training_args.model_max_length,
+            padding_side="right"
+        )
+    elif 'opt' in model_args.model_name_or_path:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+            # model_max_length = 4096
+            model_max_length=training_args.model_max_length
+        )
+    # TODO:我认为大概用到的是这个
+    else:
+        tokenizer = transformers.AutoTokenizer.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+            model_max_length=training_args.model_max_length,
+            padding_side="right",
+            use_fast=False,
+        )
+
+    # 我这里在训练的时候用的是v1
+    if model_args.version == "v0":
+        if tokenizer.pad_token is None:
+            smart_tokenizer_and_embedding_resize(
+                special_tokens_dict=dict(pad_token="[PAD]"),
+                tokenizer=tokenizer,
+                model=model,
+            )
+    elif model_args.version == "v0.5":
+        tokenizer.pad_token = tokenizer.unk_token
+    else:
+        tokenizer.pad_token = tokenizer.unk_token
+        if model_args.version in conversation_lib.conv_templates:
+            conversation_lib.default_conversation = conversation_lib.conv_templates[model_args.version]
+        else:
+            conversation_lib.default_conversation = conversation_lib.conv_templates["vicuna_v1"]
+
+# conv_vicuna_v1 = Conversation(
+#     system="A chat between a curious user and an artificial intelligence assistant. "
+#     "The assistant gives helpful, detailed, and polite answers to the user's questions.",
+#     roles=("USER", "ASSISTANT"),
+#     version="v1",
+#     messages=(),
+#     offset=0,
+#     sep_style=SeparatorStyle.TWO,
+#     sep=" ",
+#     sep2="</s>",
+# )
+
+    # 应该没啥用
+    # if model_args.vision_tower is not None:
+    model.get_model().initialize_graph_modules(
+        model_args=model_args,
+        fsdp=training_args.fsdp
+    )
+
+    # 这个参数实际上也是没有用的
+    data_args.is_multimodal = True
+
+    model.config.tune_mm_mlp_adapter = training_args.tune_mm_mlp_adapter = model_args.tune_mm_mlp_adapter
+    if model_args.tune_mm_mlp_adapter:
+        # 模型整体freeze，但是mm_mlp_adapter不freeze
+        model.requires_grad_(False)
+        for p in model.get_model().mm_projector.parameters():
+            p.requires_grad = True
+
+    # 实际上目前没用到这个freeze
+    model.config.freeze_mm_mlp_adapter = training_args.freeze_mm_mlp_adapter
+    if training_args.freeze_mm_mlp_adapter:
+        for p in model.get_model().mm_projector.parameters():
+            p.requires_grad = False
+
+    if training_args.bits in [4, 8]:
+        model.get_model().mm_projector.to(dtype=compute_dtype, device=training_args.device)
+
+    # TODO：去model里看一看参数
+    model.config.mm_use_graph_start_end = data_args.mm_use_graph_start_end = model_args.mm_use_graph_start_end
+    training_args.mm_use_graph_start_end = model_args.mm_use_graph_start_end
+    model.initialize_graph_tokenizer(model_args, tokenizer=tokenizer)
+
+    if training_args.bits in [4, 8]:
+        from peft.tuners.lora import LoraLayer
+        for name, module in model.named_modules():
+            if isinstance(module, LoraLayer):
+                if training_args.bf16:
+                    module = module.to(torch.bfloat16)
+            if 'norm' in name:
+                module = module.to(torch.float32)
+            if 'lm_head' in name or 'embed_tokens' in name:
+                if hasattr(module, 'weight'):
+                    if training_args.bf16 and module.weight.dtype == torch.float32:
+                        module = module.to(torch.bfloat16)
+
+    # TODO：看一下这里的trainer
+    data_module = make_supervised_data_module(tokenizer=tokenizer,
+                                              data_args=data_args)
+    # return dict(train_dataset=train_dataset,
+    #             eval_dataset=None,
+    #             data_collator=data_collator)
+
+    # 关于trainer，可以单独看一下
+    # 这里利用**解包了字典data_module，可以具体看一下
+    trainer = LLaGATrainer(model=model,
+                           tokenizer=tokenizer,
+                           args=training_args,
+                           **data_module)
 
 
+    if list(pathlib.Path(training_args.output_dir).glob("checkpoint-*")):
+        trainer.train(resume_from_checkpoint=True)
+    else:
+        trainer.train()
+    trainer.save_state()
+
+    model.config.use_cache = True
+
+    if training_args.lora_enable:
+        state_dict = get_peft_state_maybe_zero_3(
+            model.named_parameters(), training_args.lora_bias
+        )
+        non_lora_state_dict = get_peft_state_non_lora_maybe_zero_3(
+            model.named_parameters()
+        )
+        if training_args.local_rank == 0 or training_args.local_rank == -1:
+            model.config.save_pretrained(training_args.output_dir)
+            model.save_pretrained(training_args.output_dir, state_dict=state_dict)
+            torch.save(non_lora_state_dict, os.path.join(training_args.output_dir, 'non_lora_trainables.bin'))
+    else:
+        safe_save_model_for_hf_trainer(trainer=trainer,
+                                       output_dir=training_args.output_dir)
+
+if __name__ == "__main__":
+    random.seed(0)
+    _train()

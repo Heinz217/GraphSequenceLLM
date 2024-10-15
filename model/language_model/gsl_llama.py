@@ -40,11 +40,11 @@ class GSLLlamaModel(GslMetaModel, LlamaModel):
         super(GSLLlamaModel, self).__init__(config)
 
 
-class GlsLlamaForCausalLM(LlamaForCausalLM, GslMetaForCausalLM):
+class GslLlamaForCausalLM(LlamaForCausalLM, GslMetaForCausalLM):
     config_class = GSLConfig
 
     def __init__(self, config):
-        super(GlsLlamaForCausalLM, self).__init__(config)
+        super(GslLlamaForCausalLM, self).__init__(config)
         self.model = GSLLlamaModel(config)
         self.pretraining_tp = config.pretraining_tp
         self.vocab_size = config.vocab_size
@@ -146,6 +146,6 @@ class GlsLlamaForCausalLM(LlamaForCausalLM, GslMetaForCausalLM):
         )
 
 AutoConfig.register("gls", GSLConfig)
-AutoModelForCausalLM.register(GSLConfig, GlsLlamaForCausalLM)
+AutoModelForCausalLM.register(GSLConfig, GslLlamaForCausalLM)
 
 
