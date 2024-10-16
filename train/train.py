@@ -430,6 +430,10 @@ def preprocess_v1(
 ) -> Dict:
     conv = conversation_lib.default_conversation.copy()
     roles = {"human": conv.roles[0], "gpt": conv.roles[1]}
+    # conv: Conversation(system="A chat between a curious user and an artificial intelligence assistant.
+    #    The assistant gives helpful, detailed, and polite answers to the user's questions.", roles=('USER', 'ASSISTANT'),
+    #    messages=[], offset=0, sep_style=<SeparatorStyle.TWO: 2>, sep=' ', sep2='</s>', version='v1', skip_next=False)
+    # roles: {'human': 'USER', 'gpt': 'ASSISTANT'}
 
     # Apply prompt templates
     conversations = []
@@ -445,11 +449,35 @@ def preprocess_v1(
             conv.append_message(role, sentence["value"])
         conversations.append(conv.get_prompt())
 
+    # conversation:
+    # conversations["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. USER: Given a node-centered graph: <graph>, each node represents a paper. Among the graph, the 1st to 11th nodes are the 10 neighbor nodes of the central node, and among the remaining 100 nodes, each 10 nodes is the sequence that is most likely to pass through from a neighbor node of the central node as the starting node. We need to classify the center node into 7 classes: Case_Based, Genetic_Algorithms, Neural_Networks, Probabilistic_Methods, Reinforcement_Learning, Rule_Learning, Theory, please tell me which class the center node belongs to? ASSISTANT: Case_Based</s>"]
+
     # Tokenize conversations
 
     if has_graph:
+        # conversations:
+        # prompt:["A chat between a curious user and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the user's questions. USER: Given a node-centered graph: <graph>, each node represents a paper. Among the graph, the 1st to 11th nodes are the 10 neighbor nodes of the central node, and among the remaining 100 nodes, each 10 nodes is the sequence that is most likely to pass through from a neighbor node of the central node as the starting node. We need to classify the center node into 7 classes: Case_Based, Genetic_Algorithms, Neural_Networks, Probabilistic_Methods, Reinforcement_Learning, Rule_Learning, Theory, please tell me which class the center node belongs to? ASSISTANT: Neural_Networks</s>"]
         input_ids = torch.stack(
             [tokenizer_graph_token(prompt, tokenizer, return_tensors='pt') for prompt in conversations], dim=0)
+        # tensor([[    1,   319, 13563,  1546,   263, 12758,  1404,   322,   385, 23116,
+        #          21082, 20255, 29889,   450, 20255,  4076,  8444, 29892, 13173, 29892,
+        #            322,  1248,   568,  6089,   304,   278,  1404, 29915, 29879,  5155,
+        #          29889,  3148,  1001, 29901, 11221,   263,  2943, 29899,  5064,   287,
+        #           3983, 29901, 29871,  -200,  1919,  1269,  2943, 11524,   263,  5650,
+        #          29889, 17302,   278,  3983, 29892,   278, 29871, 29896,   303,   304,
+        #          29871, 29896, 29896,   386,  7573,   526,   278, 29871, 29896, 29900,
+        #          12307,  7573,   310,   278,  6555,  2943, 29892,   322,  4249,   278,
+        #           9886, 29871, 29896, 29900, 29900,  7573, 29892,  1269, 29871, 29896,
+        #          29900,  7573,   338,   278,  5665,   393,   338,  1556,  5517,   304,
+        #           1209,  1549,   515,   263, 12307,  2943,   310,   278,  6555,  2943,
+        #            408,   278,  6257,  2943, 29889,  1334,   817,   304,   770,  1598,
+        #            278,  4818,  2943,   964, 29871, 29955,  4413, 29901, 11733, 29918,
+        #          29933,  1463, 29892,  5739,  7492, 29918, 22461, 12404, 29892,  2448,
+        #           3631, 29918, 13724, 29879, 29892,  1019, 29890,  4427,  4695, 29918,
+        #          26112, 29892, 18334,  1454, 13561, 29918, 29931,   799,  1076, 29892,
+        #          27308, 29918, 29931,   799,  1076, 29892, 24134, 29892,  3113,  2649,
+        #            592,   607,   770,   278,  4818,  2943, 14393,   304, 29973,   319,
+        #           1799,  9047, 13566, 29901,  2448,  3631, 29918, 13724, 29879,     2]])
     else:
         input_ids = tokenizer(
             conversations,
@@ -460,6 +488,28 @@ def preprocess_v1(
         ).input_ids
 
     targets = input_ids.clone()
+    # targets:
+    # tensor([[    1,   319, 13563,  1546,   263, 12758,  1404,   322,   385, 23116,
+    #          21082, 20255, 29889,   450, 20255,  4076,  8444, 29892, 13173, 29892,
+    #            322,  1248,   568,  6089,   304,   278,  1404, 29915, 29879,  5155,
+    #          29889,  3148,  1001, 29901, 11221,   263,  2943, 29899,  5064,   287,
+    #           3983, 29901, 29871,  -200,  1919,  1269,  2943, 11524,   263,  5650,
+    #          29889, 17302,   278,  3983, 29892,   278, 29871, 29896,   303,   304,
+    #          29871, 29896, 29896,   386,  7573,   526,   278, 29871, 29896, 29900,
+    #          12307,  7573,   310,   278,  6555,  2943, 29892,   322,  4249,   278,
+    #           9886, 29871, 29896, 29900, 29900,  7573, 29892,  1269, 29871, 29896,
+    #          29900,  7573,   338,   278,  5665,   393,   338,  1556,  5517,   304,
+    #           1209,  1549,   515,   263, 12307,  2943,   310,   278,  6555,  2943,
+    #            408,   278,  6257,  2943, 29889,  1334,   817,   304,   770,  1598,
+    #            278,  4818,  2943,   964, 29871, 29955,  4413, 29901, 11733, 29918,
+    #          29933,  1463, 29892,  5739,  7492, 29918, 22461, 12404, 29892,  2448,
+    #           3631, 29918, 13724, 29879, 29892,  1019, 29890,  4427,  4695, 29918,
+    #          26112, 29892, 18334,  1454, 13561, 29918, 29931,   799,  1076, 29892,
+    #          27308, 29918, 29931,   799,  1076, 29892, 24134, 29892,  3113,  2649,
+    #            592,   607,   770,   278,  4818,  2943, 14393,   304, 29973,   319,
+    #           1799,  9047, 13566, 29901, 11733, 29918, 29933,  1463,     2]])
+
+
 
     assert conv.sep_style == conversation_lib.SeparatorStyle.TWO
 
@@ -468,7 +518,7 @@ def preprocess_v1(
         # total_len = int(target.ne(tokenizer.pad_token_id).sum())
         total_len = target.shape[0]
 
-        rounds = conversation.split(conv.sep2)
+        rounds = conversation.split(conv.sep2)  # sep2='</s>'
         cur_len = 1
         target[:cur_len] = IGNORE_INDEX
         for i, rou in enumerate(rounds):
@@ -490,7 +540,7 @@ def preprocess_v1(
             target[cur_len: cur_len + instruction_len] = IGNORE_INDEX
 
             cur_len += round_len
-        target[cur_len:] = IGNORE_INDEX
+        target[cur_len:] = IGNORE_INDEX  # 假如在cur_len之后还有token，那么全部mask掉
 
         if cur_len < tokenizer.model_max_length:
             if cur_len != total_len:
@@ -499,6 +549,50 @@ def preprocess_v1(
                     f"WARNING: tokenization mismatch: {cur_len} vs. {total_len}."
                     f" (ignored)"
                 )
+    # dict:
+    # {'input_ids': tensor([[    1,   319, 13563,  1546,   263, 12758,  1404,   322,   385, 23116,
+    #          21082, 20255, 29889,   450, 20255,  4076,  8444, 29892, 13173, 29892,
+    #            322,  1248,   568,  6089,   304,   278,  1404, 29915, 29879,  5155,
+    #          29889,  3148,  1001, 29901, 11221,   263,  2943, 29899,  5064,   287,
+    #           3983, 29901, 29871,  -200,  1919,  1269,  2943, 11524,   263,  5650,
+    #          29889, 17302,   278,  3983, 29892,   278, 29871, 29896,   303,   304,
+    #          29871, 29896, 29896,   386,  7573,   526,   278, 29871, 29896, 29900,
+    #          12307,  7573,   310,   278,  6555,  2943, 29892,   322,  4249,   278,
+    #           9886, 29871, 29896, 29900, 29900,  7573, 29892,  1269, 29871, 29896,
+    #          29900,  7573,   338,   278,  5665,   393,   338,  1556,  5517,   304,
+    #           1209,  1549,   515,   263, 12307,  2943,   310,   278,  6555,  2943,
+    #            408,   278,  6257,  2943, 29889,  1334,   817,   304,   770,  1598,
+    #            278,  4818,  2943,   964, 29871, 29955,  4413, 29901, 11733, 29918,
+    #          29933,  1463, 29892,  5739,  7492, 29918, 22461, 12404, 29892,  2448,
+    #           3631, 29918, 13724, 29879, 29892,  1019, 29890,  4427,  4695, 29918,
+    #          26112, 29892, 18334,  1454, 13561, 29918, 29931,   799,  1076, 29892,
+    #          27308, 29918, 29931,   799,  1076, 29892, 24134, 29892,  3113,  2649,
+    #            592,   607,   770,   278,  4818,  2943, 14393,   304, 29973,   319,
+    #           1799,  9047, 13566, 29901, 11733, 29918, 29933,  1463,     2]]),
+    #
+    # 'labels':
+    #
+    #  tensor([[ -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,  -100,
+    #           -100,  -100,  -100,  -100, 11733, 29918, 29933,  1463,     2]])}
+
+    # 2448,  3631, 29918, 13724, 29879,     2 :这就是label的token
 
     return dict(
         input_ids=input_ids,
@@ -694,6 +788,23 @@ class LazySupervisedGraphDataset(Dataset):
                 pretrained_emb = self.load_pretrain_embedding_graph(data_dir, data_args.pretrained_embedding_type)
                 self.structure_emb = torch.load(
                     f"dataset/laplacian_{data_args.use_hop}_{data_args.sample_neighbor_size}.pt")
+                # print("structure_emb")
+                # print(self.structure_emb)
+                # print(self.structure_emb.size())
+                # tensor([[0.0000e+00, 0.0000e+00, 0.0000e+00,  ..., 0.0000e+00, 0.0000e+00,
+                #          4.9304e-33],
+                #         [0.0000e+00, 0.0000e+00, 0.0000e+00,  ..., 0.0000e+00, 0.0000e+00,
+                #          2.2204e-17],
+                #         [0.0000e+00, 0.0000e+00, 0.0000e+00,  ..., 0.0000e+00, 0.0000e+00,
+                #          2.2204e-17],
+                #         ...,
+                #         [0.0000e+00, 0.0000e+00, 0.0000e+00,  ..., 1.0000e+00, 3.1623e-01,
+                #          1.0000e-01],
+                #         [0.0000e+00, 0.0000e+00, 0.0000e+00,  ..., 0.0000e+00, 3.1623e-01,
+                #          1.0000e-01],
+                #         [1.0000e+00, 0.0000e+00, 0.0000e+00,  ..., 0.0000e+00, 3.1623e-01,
+                #          1.0000e-01]])
+                # torch.Size([111, 111])
             elif data_args.template == "HO":
                 pretrained_emb = self.load_pretrain_embedding_hop(data_dir, data_args.pretrained_embedding_type, data_args.use_hop)
                 self.structure_emb = None
@@ -828,12 +939,20 @@ class LazySupervisedGraphDataset(Dataset):
 
         random.shuffle(list_data_dict)
         rank0_print(f"Formatting inputs...Skip in lazy mode, size {len(list_data_dict)}")
+        # Dataset cora Task nc, size 1624
+        # Formatting inputs...Skip in lazy mode, size 1624
         self.tokenizer = tokenizer
         self.list_data_dict = list_data_dict
         self.data_args = data_args
 
 
     def load_pretrain_embedding_graph(self, data_dir, pretrained_embedding_type):
+        """
+        如果使用原始ND模板，则将三种embedding进行直接拼接
+        :param data_dir:
+        :param pretrained_embedding_type:
+        :return:
+        """
         if pretrained_embedding_type == "simteg":
             simteg_sbert = torch.load(os.path.join(data_dir, "simteg_sbert_x.pt"))
             simteg_roberta = torch.load(os.path.join(data_dir, "simteg_roberta_x.pt"))
@@ -842,11 +961,20 @@ class LazySupervisedGraphDataset(Dataset):
         else:
             pretrained_emb = torch.load(os.path.join(data_dir, f"{pretrained_embedding_type}_x.pt"))
         return pretrained_emb
+        # print("pretrained_emb")
+        # print(pretrained_emb)
+        # print(pretrained_emb.size())
+        # tensor([[-0.0533, -0.1021,  0.0568,  ..., -0.0223, -0.0221, -0.0004],
+        #         [-0.0084, -0.0261,  0.0437,  ..., -0.0097,  0.0248, -0.0462],
+        #         [-0.0363,  0.0175, -0.0134,  ..., -0.0282, -0.0058,  0.0429],
+        #         ...,
+        #         [-0.0111, -0.0068,  0.0476,  ..., -0.0108, -0.0025,  0.0282],
+        #         [-0.0067,  0.0469, -0.0034,  ..., -0.0173,  0.0165,  0.0011],
+        #         [-0.0469, -0.0840,  0.0130,  ...,  0.0020, -0.0053, -0.0109]])
+        # torch.Size([2708, 2432])  1024 * 2 + 384
 
 
     def load_pretrain_embedding_hop(self, data_dir, pretrained_embedding_type, hop):
-        # TODO:注意看一下各种embedding的格式
-        # TODO:注意看一下到底是怎样进行输入的，和维度hidden到底有什么关系？
         if pretrained_embedding_type == "simteg":
             simteg_sbert=[torch.load(os.path.join(data_dir, f"simteg_sbert_x.pt"))] + [torch.load(os.path.join(data_dir, f"simteg_sbert_{i}hop_x.pt")) for i in range(1, hop + 1)]
             simteg_roberta = [torch.load(os.path.join(data_dir, f"simteg_roberta_x.pt"))] + [torch.load(os.path.join(data_dir, f"simteg_roberta_{i}hop_x.pt")) for i in range(1, hop + 1)]
@@ -902,17 +1030,42 @@ class LazySupervisedGraphDataset(Dataset):
                              labels=data_dict["labels"][0])
         # image exist in the data
         if 'graph' in self.list_data_dict[i]:
+            # {'id': 1491, 'graph': [1491, 1605, 1390, 903, 851, -500, -500, -500, -500, -500, -500, 1605, 1491, 1390, -500, -500, -500, -500, -500, -500, -500, 1390, 1491, 1605, -500, -500, -500, -500, -500, -500, -500, 903, 1491, 1605, -500, -500, -500, -500, -500, -500, -500, 851, 1491, 1605, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500, -500], 'conversations': [{'from': 'human', 'value': 'Given a node-centered graph: <graph>, each node represents a paper. Among the graph, the 1st to 11th nodes are the 10 neighbor nodes of the central node, and among the remaining 100 nodes, each 10 nodes is the sequence that is most likely to pass through from a neighbor node of the central node as the starting node. We need to classify the center node into 7 classes: Case_Based, Genetic_Algorithms, Neural_Networks, Probabilistic_Methods, Reinforcement_Learning, Rule_Learning, Theory, please tell me which class the center node belongs to?'}, {'from': 'gpt', 'value': 'Theory'}], 'dataset': 'cora'}
             if not isinstance(self.list_data_dict[i]['graph'][0], list):
                 self.list_data_dict[i]['graph'] = [self.list_data_dict[i]['graph']]
             if self.template == "ND":
                 graph = torch.LongTensor(self.list_data_dict[i]['graph'])
+                # torch.Size([1, 111])
                 mask = graph != DEFAULT_GRAPH_PAD_ID  # 在这里，注意：将graph中的空位置利用-500标注，据此将graph进行mask操作。
                 masked_graph_emb = self.pretrained_embs[self.list_data_dict[i]["dataset"]][graph[mask]]
-                s, n, d = graph.shape[0], graph.shape[1], masked_graph_emb.shape[1]
+                # self.list_data_dict[i]["dataset"] = "cora"
+                # self.pretrained_embs[self.list_data_dict[i]["dataset"]]获取数据集对应的embedding
+                # 从预训练的embedding中获得对应的embedding
+                # torch.Size([34, 2432]) 34指的是有效节点个数
+                s, n, d = graph.shape[0], graph.shape[1], masked_graph_emb.shape[1]  # s=1, n=111, d=2432
                 graph_emb = torch.zeros((s, n, d))
-                graph_emb[mask] = masked_graph_emb
+                graph_emb[mask] = masked_graph_emb  # 预训练的embedding中的有效节点的embedding赋值给graph_emb
                 if self.structure_emb is not None:
                     graph_emb = torch.cat([graph_emb, self.structure_emb.unsqueeze(0).expand(s, -1, -1)], dim=-1)
+
+                    # structure_emb.unsqueeze(0) [111, 111] -> [1, 111, 111]
+                    # structure_emb.unsqueeze(0).expand(s, -1, -1) -> [1, 111, 111]
+                    # graph_emb [s, n, d] n是节点数，d是embedding维度
+                    # torch.Size([1, 111, 2543])
+                    # tensor([[[ 1.9736e-02,  5.9997e-02,  7.4564e-04,  ...,  0.0000e+00,
+                    #            0.0000e+00,  4.9304e-33],
+                    #          [-6.0564e-03, -8.9834e-04, -2.4486e-03,  ...,  0.0000e+00,
+                    #            0.0000e+00,  2.2204e-17],
+                    #          [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  ...,  0.0000e+00,
+                    #            0.0000e+00,  2.2204e-17],
+                    #          ...,
+                    #          [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  ...,  1.0000e+00,
+                    #            3.1623e-01,  1.0000e-01],
+                    #          [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  ...,  0.0000e+00,
+                    #            3.1623e-01,  1.0000e-01],
+                    #          [ 0.0000e+00,  0.0000e+00,  0.0000e+00,  ...,  0.0000e+00,
+                    #            3.1623e-01,  1.0000e-01]]])
+                    # torch.Size([1, 111, 2543])
 
             elif self.template == "HO":
                 for g in range(len(self.list_data_dict[i]['graph'])):
@@ -1053,6 +1206,34 @@ def _train():
             cache_dir=training_args.cache_dir,
             **bnb_model_from_pretrained_args
         )
+        # print(model)
+        # LlagaLlamaForCausalLM(
+        #   (model): LlagaLlamaModel(
+        #     (embed_tokens): Embedding(32000, 4096, padding_idx=0)
+        #     (layers): ModuleList(
+        #       (0-31): 32 x LlamaDecoderLayer(
+        #         (self_attn): LlamaAttention(
+        #           (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
+        #           (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
+        #           (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
+        #           (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+        #           (rotary_emb): LlamaLinearScalingRotaryEmbedding()
+        #         )
+        #         (mlp): LlamaMLP(
+        #           (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
+        #           (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
+        #           (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
+        #           (act_fn): SiLUActivation()
+        #         )
+        #         (input_layernorm): LlamaRMSNorm()
+        #         (post_attention_layernorm): LlamaRMSNorm()
+        #       )
+        #     )
+        #     (norm): LlamaRMSNorm()
+        #   )
+        #   (lm_head): Linear(in_features=4096, out_features=32000, bias=False)
+        # )
+
 
     # 应该是没用上
     if training_args.bits in [4, 8]:
@@ -1107,6 +1288,7 @@ def _train():
             model_max_length=training_args.model_max_length
         )
     # TODO:我认为大概用到的是这个
+    # 实际上用的就是这个
     else:
         tokenizer = transformers.AutoTokenizer.from_pretrained(
             model_args.model_name_or_path,
@@ -1145,7 +1327,7 @@ def _train():
 #     sep2="</s>",
 # )
 
-    # 应该没啥用
+
     # if model_args.vision_tower is not None:
     model.get_model().initialize_graph_modules(
         model_args=model_args,
@@ -1167,6 +1349,40 @@ def _train():
     if training_args.freeze_mm_mlp_adapter:
         for p in model.get_model().mm_projector.parameters():
             p.requires_grad = False
+    # print(model)
+    # LlagaLlamaForCausalLM(
+    #     (model): LlagaLlamaModel(
+    #     (embed_tokens): Embedding(32000, 4096, padding_idx=0)
+    # (layers): ModuleList(
+    #     (0 - 31): 32
+    # x
+    # LlamaDecoderLayer(
+    #     (self_attn): LlamaAttention(
+    #     (q_proj): Linear(in_features=4096, out_features=4096, bias=False)
+    # (k_proj): Linear(in_features=4096, out_features=4096, bias=False)
+    # (v_proj): Linear(in_features=4096, out_features=4096, bias=False)
+    # (o_proj): Linear(in_features=4096, out_features=4096, bias=False)
+    # (rotary_emb): LlamaLinearScalingRotaryEmbedding()
+    # )
+    # (mlp): LlamaMLP(
+    #     (gate_proj): Linear(in_features=4096, out_features=11008, bias=False)
+    # (up_proj): Linear(in_features=4096, out_features=11008, bias=False)
+    # (down_proj): Linear(in_features=11008, out_features=4096, bias=False)
+    # (act_fn): SiLUActivation()
+    # )
+    # (input_layernorm): LlamaRMSNorm()
+    # (post_attention_layernorm): LlamaRMSNorm()
+    # )
+    # )
+    # (norm): LlamaRMSNorm()
+    # (mm_projector): Sequential(
+    #     (0): Linear(in_features=2543, out_features=4096, bias=True)
+    # (1): GELU(approximate='none')
+    # (2): Linear(in_features=4096, out_features=4096, bias=True)
+    # )
+    # )
+    # (lm_head): Linear(in_features=4096, out_features=32000, bias=False)
+    # )
 
     if training_args.bits in [4, 8]:
         model.get_model().mm_projector.to(dtype=compute_dtype, device=training_args.device)
@@ -1189,7 +1405,7 @@ def _train():
                     if training_args.bf16 and module.weight.dtype == torch.float32:
                         module = module.to(torch.bfloat16)
 
-    # TODO：看一下这里的trainer
+    # TODO:看一下这里的trainer
     data_module = make_supervised_data_module(tokenizer=tokenizer,
                                               data_args=data_args)
     # return dict(train_dataset=train_dataset,
